@@ -40,3 +40,4 @@ def to_code(config):
 
     cg.add(var.set_throttle(config[CONF_THROTTLE]))
     cg.add(var.set_checksum_validation(config[CONF_VALIDATE_CHECKSUM]))
+    cg.add(var.set_id(config[CONF_ID].id))

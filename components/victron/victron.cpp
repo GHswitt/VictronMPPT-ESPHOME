@@ -14,7 +14,7 @@ static const uint8_t MAX_FIELDS_PER_BLOCK = 30;
 namespace esphome {
 namespace victron {
 
-static const char *const TAG = "victron";
+#define TAG id_.c_str()
 
 static const uint8_t OFF_REASONS_SIZE = 16;
 static const char *const OFF_REASONS[OFF_REASONS_SIZE] = {
@@ -138,19 +138,20 @@ void VictronComponent::loop() {
       if (label_ == "Checksum") {
         state_ = 0;
         // The checksum is used as end of frame indicator, checksum_ should now be 0
+        ESP_LOGV(TAG, "RX Checksum");
         publish_frame_();
-        frame_buffer_.clear();
+        values_.clear();
         checksum_ = 0;
         continue;
       }
       if (c == '\r' || c == '\n') {
         // a block/frame has up to 22 entries
         // transmission errors could garble the end of frame indicator, leading to excess buffer length
-        if (frame_buffer_.size() + label_.size() + value_.size() + 3 < MAX_BUF_SIZE) {
-          frame_buffer_.append(label_);
-          frame_buffer_.append("\t");
-          frame_buffer_.append(value_);
-          frame_buffer_.append("\r\n");
+        if (values_.size() < MAX_FIELDS_PER_BLOCK) {
+          values_[label_] = value_;
+          ESP_LOGV(TAG, "RX[%u] %s=%s", values_.size(), label_.c_str(), value_.c_str());
+        } else {
+          ESP_LOGW(TAG, "Too many fields in frame, discarding frame");
         }
         state_ = 0;
       } else {
@@ -166,6 +167,7 @@ void VictronComponent::loop() {
         // a hex frame ends with '\n' and has its own checksum; prepare to receive another text frame
         state_ = 0;
         checksum_ = 0;
+        values_.clear();
       }
     }
   }
@@ -748,153 +750,142 @@ void VictronComponent::publish_frame_() {
   }
   this->last_publish_ = now;
 
-  size_t last = 0;
-  size_t next = 0;
-  while ((next = frame_buffer_.find("\r\n", last)) != std::string::npos) {
-    std::string item = frame_buffer_.substr(last, next - last);
-    last = next + 2;
-    if (item.empty()) {
-      continue;
-    }
-    size_t dpos = item.find('\t');
-    if (dpos == std::string::npos) {
-      continue;
-    }
-    label_ = item.substr(0, dpos);
-    value_ = item.substr(dpos + 1);
-    ESP_LOGD(TAG, "Handle %s value %s", label_.c_str(), value_.c_str());
-    handle_value_();
+  ESP_LOGD(TAG, "Publish frame, count: %u", values_.size());
+
+  for (auto &kv : values_) {
+    const std::string &label = kv.first;
+    const std::string &value = kv.second;
+  
+    handle_value_(label, value);
   }
 }
 
-void VictronComponent::handle_value_() {
-  int value;
-
-  if (label_ == "V") {
-    this->publish_state_(battery_voltage_sensor_, atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+void VictronComponent::handle_value_(const std::string &label, const std::string &value) {
+  if (label == "V") {
+    this->publish_state_(battery_voltage_sensor_, atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "V2") {
+  if (label == "V2") {
     // mV to V
-    this->publish_state_(battery_voltage_2_sensor_, atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+    this->publish_state_(battery_voltage_2_sensor_, atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "V3") {
+  if (label == "V3") {
     // mV to V
-    this->publish_state_(battery_voltage_3_sensor_, atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+    this->publish_state_(battery_voltage_3_sensor_, atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "VS") {
+  if (label == "VS") {
     // mV to V
-    this->publish_state_(auxiliary_battery_voltage_sensor_, atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+    this->publish_state_(auxiliary_battery_voltage_sensor_, atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "VM") {
+  if (label == "VM") {
     // mV to V
     this->publish_state_(midpoint_voltage_of_the_battery_bank_sensor_,
-                         atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+                         atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "DM") {
+  if (label == "DM") {
     // Per mill to %
     this->publish_state_(midpoint_deviation_of_the_battery_bank_sensor_,
-                         atoi(value_.c_str()) * 0.10f);  // NOLINT(cert-err34-c)
+                         atoi(value.c_str()) * 0.10f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "VPV") {
+  if (label == "VPV") {
     // mV to V
-    this->publish_state_(panel_voltage_sensor_, atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+    this->publish_state_(panel_voltage_sensor_, atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "PPV") {
-    this->publish_state_(panel_power_sensor_, atoi(value_.c_str()));  // NOLINT(cert-err34-c)
+  if (label == "PPV") {
+    this->publish_state_(panel_power_sensor_, atoi(value.c_str()));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "I") {
+  if (label == "I") {
     // mA to A
-    this->publish_state_(battery_current_sensor_, atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+    this->publish_state_(battery_current_sensor_, atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "I2") {
+  if (label == "I2") {
     // mA to A
-    this->publish_state_(battery_current_2_sensor_, atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+    this->publish_state_(battery_current_2_sensor_, atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "I3") {
+  if (label == "I3") {
     // mA to A
-    this->publish_state_(battery_current_3_sensor_, atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+    this->publish_state_(battery_current_3_sensor_, atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "IL") {
-    this->publish_state_(load_current_sensor_, atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+  if (label == "IL") {
+    this->publish_state_(load_current_sensor_, atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "LOAD") {
-    this->publish_state_(load_state_binary_sensor_, value_ == "ON" || value_ == "On");
+  if (label == "LOAD") {
+    this->publish_state_(load_state_binary_sensor_, value == "ON" || value == "On");
     return;
   }
 
-  if (label_ == "T") {
-    if (value_ == "---") {
+  if (label == "T") {
+    if (value == "---") {
       this->publish_state_(battery_temperature_sensor_, NAN);
       return;
     }
 
-    this->publish_state_(battery_temperature_sensor_, atoi(value_.c_str()));  // NOLINT(cert-err34-c)
+    this->publish_state_(battery_temperature_sensor_, atoi(value.c_str()));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "P") {
-    this->publish_state_(instantaneous_power_sensor_, atoi(value_.c_str()));  // NOLINT(cert-err34-c)
+  if (label == "P") {
+    this->publish_state_(instantaneous_power_sensor_, atoi(value.c_str()));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "CE") {
+  if (label == "CE") {
     // mAh -> Ah
-    this->publish_state_(consumed_amp_hours_sensor_, atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+    this->publish_state_(consumed_amp_hours_sensor_, atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "SOC") {
+  if (label == "SOC") {
     // Per mill to %
-    this->publish_state_(state_of_charge_sensor_, atoi(value_.c_str()) * 0.10f);  // NOLINT(cert-err34-c)
+    this->publish_state_(state_of_charge_sensor_, atoi(value.c_str()) * 0.10f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "TTG") {
-    this->publish_state_(time_to_go_sensor_, atoi(value_.c_str()));  // NOLINT(cert-err34-c)
+  if (label == "TTG") {
+    this->publish_state_(time_to_go_sensor_, atoi(value.c_str()));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "Alarm") {
-    this->publish_state_(alarm_condition_active_text_sensor_, value_);
+  if (label == "Alarm") {
+    this->publish_state_(alarm_condition_active_text_sensor_, value);
     return;
   }
 
-  if (label_ == "Relay") {
-    this->publish_state_(relay_state_binary_sensor_, value_ == "ON" || value_ == "On");
+  if (label == "Relay") {
+    this->publish_state_(relay_state_binary_sensor_, value == "ON" || value == "On");
     return;
   }
 
-  if (label_ == "AR") {
-    this->publish_state_(alarm_reason_text_sensor_, error_code_text(atoi(value_.c_str())));  // NOLINT(cert-err34-c)
+  if (label == "AR") {
+    this->publish_state_(alarm_reason_text_sensor_, error_code_text(atoi(value.c_str())));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "OR") {
-    auto off_reason_bitmask = parse_hex<uint32_t>(value_.substr(2, value_.size() - 2));
+  if (label == "OR") {
+    auto off_reason_bitmask = parse_hex<uint32_t>(value.substr(2, value.size() - 2));
     if (off_reason_bitmask) {
       this->publish_state_(off_reason_bitmask_sensor_, *off_reason_bitmask);
       this->publish_state_(off_reason_text_sensor_, off_reason_text(*off_reason_bitmask));
@@ -902,186 +893,190 @@ void VictronComponent::handle_value_() {
     return;
   }
 
-  if (label_ == "H1") {
+  if (label == "H1") {
     // mAh -> Ah
     this->publish_state_(depth_of_the_deepest_discharge_sensor_,
-                         atoi(value_.c_str()) / 1000.0);  // NOLINT(cert-err34-c)
+                         atoi(value.c_str()) / 1000.0);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H2") {
+  if (label == "H2") {
     // mAh -> Ah
-    this->publish_state_(depth_of_the_last_discharge_sensor_, atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+    this->publish_state_(depth_of_the_last_discharge_sensor_, atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H3") {
+  if (label == "H3") {
     // mAh -> Ah
     this->publish_state_(depth_of_the_average_discharge_sensor_,
-                         atoi(value_.c_str()) / 1000.0);  // NOLINT(cert-err34-c)
+                         atoi(value.c_str()) / 1000.0);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H4") {
-    this->publish_state_(number_of_charge_cycles_sensor_, atoi(value_.c_str()));  // NOLINT(cert-err34-c)
+  if (label == "H4") {
+    this->publish_state_(number_of_charge_cycles_sensor_, atoi(value.c_str()));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H5") {
-    this->publish_state_(number_of_full_discharges_sensor_, atoi(value_.c_str()));  // NOLINT(cert-err34-c)
+  if (label == "H5") {
+    this->publish_state_(number_of_full_discharges_sensor_, atoi(value.c_str()));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H6") {
-    if (value_ == "---") {
+  if (label == "H6") {
+    if (value == "---") {
       this->publish_state_(cumulative_amp_hours_drawn_sensor_, NAN);
       return;
     }
 
     // mAh -> Ah
-    this->publish_state_(cumulative_amp_hours_drawn_sensor_, atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+    this->publish_state_(cumulative_amp_hours_drawn_sensor_, atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H7") {
+  if (label == "H7") {
     // mV to V
-    this->publish_state_(min_battery_voltage_sensor_, atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+    this->publish_state_(min_battery_voltage_sensor_, atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H8") {
+  if (label == "H8") {
     // mV to V
-    this->publish_state_(max_battery_voltage_sensor_, atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+    this->publish_state_(max_battery_voltage_sensor_, atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H9") {
-    if (value_ == "---") {
+  if (label == "H9") {
+    if (value == "---") {
       this->publish_state_(last_full_charge_sensor_, NAN);
       return;
     }
 
     // sec -> min
-    this->publish_state_(last_full_charge_sensor_, (float) atoi(value_.c_str()) / 60.0f);  // NOLINT(cert-err34-c)
+    this->publish_state_(last_full_charge_sensor_, (float) atoi(value.c_str()) / 60.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H10") {
-    if (value_ == "---") {
+  if (label == "H10") {
+    if (value == "---") {
       this->publish_state_(number_of_automatic_synchronizations_sensor_, NAN);
       return;
     }
 
-    this->publish_state_(number_of_automatic_synchronizations_sensor_, atoi(value_.c_str()));  // NOLINT(cert-err34-c)
+    this->publish_state_(number_of_automatic_synchronizations_sensor_, atoi(value.c_str()));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H11") {
-    this->publish_state_(number_of_low_main_voltage_alarms_sensor_, atoi(value_.c_str()));  // NOLINT(cert-err34-c)
+  if (label == "H11") {
+    this->publish_state_(number_of_low_main_voltage_alarms_sensor_, atoi(value.c_str()));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H12") {
-    this->publish_state_(number_of_high_main_voltage_alarms_sensor_, atoi(value_.c_str()));  // NOLINT(cert-err34-c)
+  if (label == "H12") {
+    this->publish_state_(number_of_high_main_voltage_alarms_sensor_, atoi(value.c_str()));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H13") {
-    this->publish_state_(number_of_low_auxiliary_voltage_alarms_sensor_, atoi(value_.c_str()));  // NOLINT(cert-err34-c)
+  if (label == "H13") {
+    this->publish_state_(number_of_low_auxiliary_voltage_alarms_sensor_, atoi(value.c_str()));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H14") {
+  if (label == "H14") {
     this->publish_state_(number_of_high_auxiliary_voltage_alarms_sensor_,
-                         atoi(value_.c_str()));  // NOLINT(cert-err34-c)
+                         atoi(value.c_str()));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H15") {
+  if (label == "H15") {
     // mV to V
     this->publish_state_(min_auxiliary_battery_voltage_sensor_,
-                         atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+                         atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H16") {
+  if (label == "H16") {
     // mV to V
     this->publish_state_(max_auxiliary_battery_voltage_sensor_,
-                         atoi(value_.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
+                         atoi(value.c_str()) / 1000.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
   // "H17"    0.01 kWh   Amount of discharged energy (BMV) / Amount of produced energy (DC monitor)
-  if (label_ == "H17") {
+  if (label == "H17") {
     // Wh
-    this->publish_state_(amount_of_discharged_energy_sensor_, atoi(value_.c_str()) * 10.0f);  // NOLINT(cert-err34-c)
+    this->publish_state_(amount_of_discharged_energy_sensor_, atoi(value.c_str()) * 10.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
   // "H18"    0.01 kWh   Amount of charged energy (BMV) / Amount of consumed energy (DC monitor)
-  if (label_ == "H18") {
+  if (label == "H18") {
     // Wh
-    this->publish_state_(amount_of_charged_energy_sensor_, atoi(value_.c_str()) * 10.0f);  // NOLINT(cert-err34-c)
+    this->publish_state_(amount_of_charged_energy_sensor_, atoi(value.c_str()) * 10.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H19") {
-    this->publish_state_(yield_total_sensor_, atoi(value_.c_str()) * 10.0f);  // NOLINT(cert-err34-c)
+  if (label == "H19") {
+    this->publish_state_(yield_total_sensor_, atoi(value.c_str()) * 10.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H20") {
-    this->publish_state_(yield_today_sensor_, atoi(value_.c_str()) * 10.0f);  // NOLINT(cert-err34-c)
+  if (label == "H20") {
+    this->publish_state_(yield_today_sensor_, atoi(value.c_str()) * 10.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H21") {
-    this->publish_state_(max_power_today_sensor_, atoi(value_.c_str()));  // NOLINT(cert-err34-c)
+  if (label == "H21") {
+    this->publish_state_(max_power_today_sensor_, atoi(value.c_str()));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H22") {
-    this->publish_state_(yield_yesterday_sensor_, atoi(value_.c_str()) * 10.0f);  // NOLINT(cert-err34-c)
+  if (label == "H22") {
+    this->publish_state_(yield_yesterday_sensor_, atoi(value.c_str()) * 10.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "H23") {
-    this->publish_state_(max_power_yesterday_sensor_, atoi(value_.c_str()));  // NOLINT(cert-err34-c)
+  if (label == "H23") {
+    this->publish_state_(max_power_yesterday_sensor_, atoi(value.c_str()));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "ERR") {
-    value = atoi(value_.c_str());  // NOLINT(cert-err34-c)
-    this->publish_state_(error_code_sensor_, value);
-    this->publish_state_(error_text_sensor_, error_code_text(value));
+  if (label == "ERR") {
+    int ivalue = atoi(value.c_str());  // NOLINT(cert-err34-c)
+    this->publish_state_(error_code_sensor_, ivalue);
+    this->publish_state_(error_text_sensor_, error_code_text(ivalue));
     return;
   }
 
-  if (label_ == "CS") {
-    value = atoi(value_.c_str());  // NOLINT(cert-err34-c)
-    this->publish_state_(charging_mode_id_sensor_, (float) value);
-    this->publish_state_(charging_mode_text_sensor_, charging_mode_text(value));
+  if (label == "CS") {
+    int ivalue = atoi(value.c_str());  // NOLINT(cert-err34-c)
+    this->publish_state_(charging_mode_id_sensor_, (float) ivalue);
+    this->publish_state_(charging_mode_text_sensor_, charging_mode_text(ivalue));
     return;
   }
 
   // "BMV"               Model description (deprecated)
-  if (label_ == "BMV") {
-    this->publish_state_(model_description_text_sensor_, value_);
+  if (label == "BMV") {
+    this->publish_state_(model_description_text_sensor_, value);
     return;
   }
 
-  if (label_ == "FW") {
-    this->publish_state_once_(firmware_version_text_sensor_, value_.insert(value_.size() - 2, "."));
+  if (label == "FW") {
+    std::string FW = value;
+    if (FW.size() > 2) {
+      FW = FW.insert(FW.size() - 2, ".");
+    }
+    this->publish_state_once_(firmware_version_text_sensor_, FW);
     return;
   }
 
-  if (label_ == "FWE") {
+  if (label == "FWE") {
     if (this->firmware_version_24bit_text_sensor_ == nullptr || this->firmware_version_24bit_text_sensor_->has_state())
       return;
 
-    if (value_.size() > 4) {
-      std::string release_type = value_.substr(value_.size() - 2, 2);
-      std::string version_number = value_.substr(0, value_.size() - 2);
+    if (value.size() > 4) {
+      std::string release_type = value.substr(value.size() - 2, 2);
+      std::string version_number = value.substr(0, value.size() - 2);
       version_number = version_number.insert(version_number.size() - 2, ".");
       release_type = (release_type == "FF") ? "-official" : "-beta-" + release_type;
 
@@ -1089,74 +1084,74 @@ void VictronComponent::handle_value_() {
       return;
     }
 
-    this->publish_state_once_(firmware_version_24bit_text_sensor_, value_);
+    this->publish_state_once_(firmware_version_24bit_text_sensor_, value);
     return;
   }
 
-  if (label_ == "PID") {
-    this->publish_state_once_(device_type_text_sensor_, device_type_text(strtol(value_.c_str(), nullptr, 0)));
+  if (label == "PID") {
+    this->publish_state_once_(device_type_text_sensor_, device_type_text(strtol(value.c_str(), nullptr, 0)));
     return;
   }
 
-  if (label_ == "SER#") {
-    this->publish_state_once_(serial_number_text_sensor_, value_);
+  if (label == "SER#") {
+    this->publish_state_once_(serial_number_text_sensor_, value);
     return;
   }
 
-  if (label_ == "HC#") {
-    this->publish_state_once_(hardware_revision_text_sensor_, value_);
+  if (label == "HC#") {
+    this->publish_state_once_(hardware_revision_text_sensor_, value);
     return;
   }
 
-  if (label_ == "HSDS") {
-    this->publish_state_(day_number_sensor_, atoi(value_.c_str()));  // NOLINT(cert-err34-c)
+  if (label == "HSDS") {
+    this->publish_state_(day_number_sensor_, atoi(value.c_str()));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "MODE") {
-    value = atoi(value_.c_str());  // NOLINT(cert-err34-c)
-    this->publish_state_(device_mode_id_sensor_, (float) value);
-    this->publish_state_(device_mode_text_sensor_, device_mode_text(value));
+  if (label == "MODE") {
+    int ivalue = atoi(value.c_str());  // NOLINT(cert-err34-c)
+    this->publish_state_(device_mode_id_sensor_, (float) ivalue);
+    this->publish_state_(device_mode_text_sensor_, device_mode_text(ivalue));
     return;
   }
 
-  if (label_ == "AC_OUT_V") {
-    this->publish_state_(ac_out_voltage_sensor_, atoi(value_.c_str()) / 100.0f);  // NOLINT(cert-err34-c)
+  if (label == "AC_OUT_V") {
+    this->publish_state_(ac_out_voltage_sensor_, atoi(value.c_str()) / 100.0f);  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "AC_OUT_I") {
-    this->publish_state_(ac_out_current_sensor_, std::max(0.0f, atoi(value_.c_str()) / 10.0f));  // NOLINT(cert-err34-c)
+  if (label == "AC_OUT_I") {
+    this->publish_state_(ac_out_current_sensor_, std::max(0.0f, atoi(value.c_str()) / 10.0f));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "AC_OUT_S") {
-    this->publish_state_(ac_out_apparent_power_sensor_, atoi(value_.c_str()));  // NOLINT(cert-err34-c)
+  if (label == "AC_OUT_S") {
+    this->publish_state_(ac_out_apparent_power_sensor_, atoi(value.c_str()));  // NOLINT(cert-err34-c)
     return;
   }
 
-  if (label_ == "WARN") {
-    value = atoi(value_.c_str());  // NOLINT(cert-err34-c)
-    this->publish_state_(warning_code_sensor_, value);
-    this->publish_state_(warning_text_sensor_, warning_code_text(value));
+  if (label == "WARN") {
+    int ivalue = atoi(value.c_str());  // NOLINT(cert-err34-c)
+    this->publish_state_(warning_code_sensor_, ivalue);
+    this->publish_state_(warning_text_sensor_, warning_code_text(ivalue));
     return;
   }
 
-  if (label_ == "MPPT") {
-    value = atoi(value_.c_str());  // NOLINT(cert-err34-c)
-    this->publish_state_(tracking_mode_id_sensor_, (float) value);
-    this->publish_state_(tracking_mode_text_sensor_, tracking_mode_text(value));
+  if (label == "MPPT") {
+    int ivalue = atoi(value.c_str());  // NOLINT(cert-err34-c)
+    this->publish_state_(tracking_mode_id_sensor_, (float) ivalue);
+    this->publish_state_(tracking_mode_text_sensor_, tracking_mode_text(ivalue));
     return;
   }
 
-  if (label_ == "MON") {
-    value = atoi(value_.c_str());  // NOLINT(cert-err34-c)
-    this->publish_state_(dc_monitor_mode_id_sensor_, (float) value);
-    this->publish_state_(dc_monitor_mode_text_sensor_, dc_monitor_mode_text(value));
+  if (label == "MON") {
+    int ivalue = atoi(value.c_str());  // NOLINT(cert-err34-c)
+    this->publish_state_(dc_monitor_mode_id_sensor_, (float) ivalue);
+    this->publish_state_(dc_monitor_mode_text_sensor_, dc_monitor_mode_text(ivalue));
     return;
   }
 
-  ESP_LOGD(TAG, "Unhandled property: %s %s", label_.c_str(), value_.c_str());
+  ESP_LOGD(TAG, "Unhandled property: %s=%s", label.c_str(), value.c_str());
 }
 
 void VictronComponent::publish_state_(binary_sensor::BinarySensor *binary_sensor, const bool &state) {

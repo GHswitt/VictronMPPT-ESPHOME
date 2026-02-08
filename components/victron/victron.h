@@ -13,6 +13,7 @@ class VictronComponent : public uart::UARTDevice, public Component {
  public:
   void set_throttle(uint32_t throttle) { this->throttle_ = throttle; }
   void set_checksum_validation(bool state) { this->validate_checksum_ = state; }
+  void set_id(const std::string &id) { this->id_ = id; }
   void set_load_state_binary_sensor(binary_sensor::BinarySensor *load_state_binary_sensor) {
     load_state_binary_sensor_ = load_state_binary_sensor;
   }
@@ -211,7 +212,7 @@ class VictronComponent : public uart::UARTDevice, public Component {
 
  protected:
   void publish_frame_();
-  void handle_value_();
+  void handle_value_(const std::string &label, const std::string &value);
   void publish_state_(binary_sensor::BinarySensor *binary_sensor, const bool &state);
   void publish_state_(sensor::Sensor *sensor, float value);
   void publish_state_(text_sensor::TextSensor *text_sensor, const std::string &state);
@@ -294,11 +295,12 @@ class VictronComponent : public uart::UARTDevice, public Component {
   u_int16_t checksum_{0};
   std::string label_;
   std::string value_;
-  std::string frame_buffer_;
+  std::unordered_map<std::string, std::string> values_;
   uint32_t last_transmission_{0};
   uint32_t last_publish_{0};
   uint32_t throttle_{0};
   bool validate_checksum_{true};
+  std::string id_;
 };
 
 }  // namespace victron
