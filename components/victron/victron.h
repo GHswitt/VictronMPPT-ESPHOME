@@ -12,6 +12,7 @@ namespace victron {
 class VictronComponent : public uart::UARTDevice, public Component {
  public:
   void set_throttle(uint32_t throttle) { this->throttle_ = throttle; }
+  void set_timeout(uint32_t timeout) { this->timeout_ = timeout; }
   void set_checksum_validation(bool state) { this->validate_checksum_ = state; }
   void set_id(const std::string &id) { this->id_ = id; }
   void set_load_state_binary_sensor(binary_sensor::BinarySensor *load_state_binary_sensor) {
@@ -19,6 +20,9 @@ class VictronComponent : public uart::UARTDevice, public Component {
   }
   void set_relay_state_binary_sensor(binary_sensor::BinarySensor *relay_state_binary_sensor) {
     relay_state_binary_sensor_ = relay_state_binary_sensor;
+  }
+  void set_online_binary_sensor(binary_sensor::BinarySensor *online_binary_sensor) {
+    online_binary_sensor_ = online_binary_sensor;
   }
   void set_max_power_yesterday_sensor(sensor::Sensor *max_power_yesterday_sensor) {
     max_power_yesterday_sensor_ = max_power_yesterday_sensor;
@@ -220,6 +224,7 @@ class VictronComponent : public uart::UARTDevice, public Component {
 
   binary_sensor::BinarySensor *load_state_binary_sensor_;
   binary_sensor::BinarySensor *relay_state_binary_sensor_;
+  binary_sensor::BinarySensor *online_binary_sensor_;
 
   sensor::Sensor *max_power_yesterday_sensor_{nullptr};
   sensor::Sensor *max_power_today_sensor_{nullptr};
@@ -299,6 +304,7 @@ class VictronComponent : public uart::UARTDevice, public Component {
   uint32_t last_transmission_{0};
   uint32_t last_publish_{0};
   uint32_t throttle_{0};
+  uint32_t timeout_{0};
   bool validate_checksum_{true};
   std::string id_;
 };

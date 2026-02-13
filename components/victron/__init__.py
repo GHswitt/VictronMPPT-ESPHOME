@@ -1,7 +1,7 @@
 import esphome.codegen as cg
 from esphome.components import uart
 import esphome.config_validation as cv
-from esphome.const import CONF_ID, CONF_THROTTLE
+from esphome.const import CONF_ID, CONF_THROTTLE, CONF_TIMEOUT
 
 AUTO_LOAD = ["binary_sensor", "sensor", "text_sensor"]
 
@@ -28,6 +28,7 @@ CONFIG_SCHEMA = uart.UART_DEVICE_SCHEMA.extend(
     {
         cv.GenerateID(): cv.declare_id(VictronComponent),
         cv.Optional(CONF_THROTTLE, default="1s"): cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_TIMEOUT, default="5s"): cv.positive_time_period_milliseconds,
         cv.Optional(CONF_VALIDATE_CHECKSUM, default="true"): cv.boolean,
     }
 )
@@ -39,5 +40,6 @@ def to_code(config):
     yield uart.register_uart_device(var, config)
 
     cg.add(var.set_throttle(config[CONF_THROTTLE]))
+    cg.add(var.set_timeout(config[CONF_TIMEOUT]))
     cg.add(var.set_checksum_validation(config[CONF_VALIDATE_CHECKSUM]))
     cg.add(var.set_id(config[CONF_ID].id))

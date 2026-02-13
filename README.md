@@ -159,12 +159,15 @@ The victron device pushs one status message per second. To reduce the update int
 
 Transmission integrity is validated through a checksum. Checksum validation can be switched off with the `validate_checksum` parameter set to `false`.
 
+The `online` sensor can be configured with the `timeout` parameter (default 5s). If not data is received for more than this time, the sensor will be set to `false`.
+
 ## Entities
 
 ### Binary sensors
 
 | Label | Sensor name   |
 |-------|---------------|
+| Online state | `online` |
 | LOAD  | `load_state`  |
 | Relay | `relay_state` |
 

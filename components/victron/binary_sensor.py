@@ -1,7 +1,7 @@
 import esphome.codegen as cg
 from esphome.components import binary_sensor
 import esphome.config_validation as cv
-from esphome.const import CONF_ID, ICON_EMPTY
+from esphome.const import CONF_ID, ICON_EMPTY, ICON_SIGNAL
 
 from . import CONF_VICTRON_ID, VICTRON_COMPONENT_SCHEMA
 
@@ -11,10 +11,12 @@ CODEOWNERS = ["@KinDR007"]
 
 CONF_LOAD_STATE = "load_state"
 CONF_RELAY_STATE = "relay_state"
+CONF_ONLINE = "online"
 
 BINARY_SENSORS = [
     CONF_LOAD_STATE,
     CONF_RELAY_STATE,
+    CONF_ONLINE,
 ]
 
 CONFIG_SCHEMA = VICTRON_COMPONENT_SCHEMA.extend(
@@ -26,6 +28,10 @@ CONFIG_SCHEMA = VICTRON_COMPONENT_SCHEMA.extend(
         cv.Optional(CONF_RELAY_STATE): binary_sensor.binary_sensor_schema(
             binary_sensor.BinarySensor,
             icon=ICON_EMPTY,
+        ),
+        cv.Optional(CONF_ONLINE): binary_sensor.binary_sensor_schema(
+            binary_sensor.BinarySensor,
+            icon=ICON_SIGNAL,
         ),
     }
 )

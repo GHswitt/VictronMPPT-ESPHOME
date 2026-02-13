@@ -38,6 +38,7 @@ static const char *const OFF_REASONS[OFF_REASONS_SIZE] = {
 
 void VictronComponent::dump_config() {  // NOLINT(google-readability-function-size,readability-function-size)
   ESP_LOGCONFIG(TAG, "Victron:");
+  LOG_BINARY_SENSOR("  ", "Online state", online_binary_sensor_);
   LOG_BINARY_SENSOR("  ", "Load state", load_state_binary_sensor_);
   LOG_BINARY_SENSOR("  ", "Relay state", relay_state_binary_sensor_);
   LOG_SENSOR("  ", "Max Power Yesterday", max_power_yesterday_sensor_);
@@ -102,8 +103,18 @@ void VictronComponent::loop() {
     state_ = 0;
   }
 
-  if (!available())
+  if (!available()) {
+    // Check for transmission timeout
+    if (timeout_ && (now - last_transmission_ >= timeout_)) {
+      if (online_binary_sensor_ != nullptr) {
+        if (online_binary_sensor_->state) {
+          ESP_LOGW(TAG, "No data received for a while, marking device as offline");
+          online_binary_sensor_->publish_state(false);
+        }        
+      }
+    }
     return;
+  }
 
   last_transmission_ = now;
   while (available()) {
@@ -735,6 +746,14 @@ static std::string off_reason_text(uint32_t mask) {
 }
 
 void VictronComponent::publish_frame_() {
+  // Check online state
+  if (online_binary_sensor_ != nullptr) {
+    if (!online_binary_sensor_->state) {
+      ESP_LOGI(TAG, "Marking device as online");
+      online_binary_sensor_->publish_state(true);
+    }        
+  }
+
   if (checksum_ != 0) {
     if (validate_checksum_) {
       ESP_LOGW(TAG, "Dropping frame due to checksum error");
