@@ -215,6 +215,7 @@ class VictronComponent : public uart::UARTDevice, public Component {
   float get_setup_priority() const override { return setup_priority::DATA; }
 
  protected:
+  bool hash_labels_and_throttle_();
   void publish_frame_();
   void handle_value_(const std::string &label, const std::string &value);
   void publish_state_(binary_sensor::BinarySensor *binary_sensor, const bool &state);
@@ -301,8 +302,8 @@ class VictronComponent : public uart::UARTDevice, public Component {
   std::string label_;
   std::string value_;
   std::unordered_map<std::string, std::string> values_;
+  std::unordered_map<uint32_t, uint32_t> last_publish_;
   uint32_t last_transmission_{0};
-  uint32_t last_publish_{0};
   uint32_t throttle_{0};
   uint32_t timeout_{0};
   bool validate_checksum_{true};

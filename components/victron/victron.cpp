@@ -745,6 +745,37 @@ static std::string off_reason_text(uint32_t mask) {
   return value_list;
 }
 
+/*
+  Create hash of labels in a frame to detect different frames for throttling purposes
+*/
+bool VictronComponent::hash_labels_and_throttle_() {
+  uint32_t hash = 2166136261u;  // FNV offset basis
+
+  for (const auto &kv : values_) {
+      // hash the label (key)
+      for (unsigned char c : kv.first) {
+          hash ^= c;
+          hash *= 16777619u;  // FNV prime
+      }
+      // separator to avoid accidental key concatenation collisions
+      hash ^= 0xFF;
+      hash *= 16777619u;
+  }
+
+  // Check if hash exists as key in last_publish_ and if the corresponding value is within the throttle time window
+  uint32_t now = millis();
+  auto it = last_publish_.find(hash);
+  if (it != last_publish_.end() && (now - it->second < throttle_)) {
+    // Throttle this frame
+    return true;
+  }
+
+  // Add or update the hash with the current timestamp
+  last_publish_[hash] = now;
+
+  return false;
+}
+
 void VictronComponent::publish_frame_() {
   // Check online state
   if (online_binary_sensor_ != nullptr) {
@@ -763,11 +794,10 @@ void VictronComponent::publish_frame_() {
     }
   }
 
-  const uint32_t now = millis();
-  if (now - this->last_publish_ < this->throttle_) {
+  if (hash_labels_and_throttle_()) {
+    // Throttle this frame
     return;
   }
-  this->last_publish_ = now;
 
   ESP_LOGD(TAG, "Publish frame, count: %u", values_.size());
 
