@@ -52,8 +52,8 @@ void VictronComponent::dump_config() {  // NOLINT(google-readability-function-si
   LOG_SENSOR("  ", "Battery Voltage 2", battery_voltage_2_sensor_);
   LOG_SENSOR("  ", "Battery Voltage 3", battery_voltage_3_sensor_);
   LOG_SENSOR("  ", "Battery Current", battery_current_sensor_);
-  LOG_SENSOR("  ", "Battery Current", battery_current_2_sensor_);
-  LOG_SENSOR("  ", "Battery Current", battery_current_3_sensor_);
+  LOG_SENSOR("  ", "Battery Current 2", battery_current_2_sensor_);
+  LOG_SENSOR("  ", "Battery Current 3", battery_current_3_sensor_);
   LOG_SENSOR("  ", "AC Out Voltage", ac_out_voltage_sensor_);
   LOG_SENSOR("  ", "AC Out Current", ac_out_current_sensor_);
   LOG_SENSOR("  ", "Load Current", load_current_sensor_);
@@ -74,7 +74,7 @@ void VictronComponent::dump_config() {  // NOLINT(google-readability-function-si
   LOG_TEXT_SENSOR("  ", "Device Type", device_type_text_sensor_);
   LOG_TEXT_SENSOR("  ", "Off Reason", off_reason_text_sensor_);
 
-  LOG_SENSOR("  ", "Battery Temperature ", battery_temperature_sensor_);
+  LOG_SENSOR("  ", "Battery Temperature", battery_temperature_sensor_);
   LOG_SENSOR("  ", "Instantaneous Power", instantaneous_power_sensor_);
   LOG_SENSOR("  ", "Consumed Amp Hours", consumed_amp_hours_sensor_);
   LOG_SENSOR("  ", "State Of Charge", state_of_charge_sensor_);
@@ -139,7 +139,7 @@ void VictronComponent::loop() {
         state_ = 2;
       } else {
         // transmission errors may impact delimiters, leading to excess label length
-        if (label_.length() <= MAX_LABEL_LENGTH) {
+        if (label_.length() < MAX_LABEL_LENGTH) {
           label_.push_back(c);
         }
       }
@@ -167,7 +167,7 @@ void VictronComponent::loop() {
         state_ = 0;
       } else {
         // transmission errors may impact delimiters, leading to excess value length
-        if (value_.length() <= MAX_VALUE_LENGTH) {
+        if (value_.length() < MAX_VALUE_LENGTH) {
           value_.push_back(c);
         }
       }
@@ -731,7 +731,7 @@ static std::string off_reason_text(uint32_t mask) {
 
   if (mask) {
     for (uint8_t i = 0; i < OFF_REASONS_SIZE; i++) {
-      if (mask & (1 << i)) {
+      if (mask & (1u << i)) {
         if (first) {
           first = false;
         } else {
@@ -934,6 +934,10 @@ void VictronComponent::handle_value_(const std::string &label, const std::string
   }
 
   if (label == "OR") {
+    if (value.size () < 2 || value.substr(0, 2) != "0x") {
+      ESP_LOGW(TAG, "Unexpected format for off reason bitmask: %s", value.c_str());
+      return;
+    }
     auto off_reason_bitmask = parse_hex<uint32_t>(value.substr(2, value.size() - 2));
     if (off_reason_bitmask) {
       this->publish_state_(off_reason_bitmask_sensor_, *off_reason_bitmask);

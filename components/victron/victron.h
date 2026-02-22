@@ -223,9 +223,9 @@ class VictronComponent : public uart::UARTDevice, public Component {
   void publish_state_(text_sensor::TextSensor *text_sensor, const std::string &state);
   void publish_state_once_(text_sensor::TextSensor *text_sensor, const std::string &state);
 
-  binary_sensor::BinarySensor *load_state_binary_sensor_;
-  binary_sensor::BinarySensor *relay_state_binary_sensor_;
-  binary_sensor::BinarySensor *online_binary_sensor_;
+  binary_sensor::BinarySensor *load_state_binary_sensor_{nullptr};
+  binary_sensor::BinarySensor *relay_state_binary_sensor_{nullptr};
+  binary_sensor::BinarySensor *online_binary_sensor_{nullptr};
 
   sensor::Sensor *max_power_yesterday_sensor_{nullptr};
   sensor::Sensor *max_power_today_sensor_{nullptr};
@@ -248,7 +248,6 @@ class VictronComponent : public uart::UARTDevice, public Component {
   sensor::Sensor *ac_out_apparent_power_sensor_{nullptr};
   sensor::Sensor *load_current_sensor_{nullptr};
   sensor::Sensor *day_number_sensor_{nullptr};
-  sensor::Sensor *device_mode_sensor_{nullptr};
   sensor::Sensor *charging_mode_id_sensor_{nullptr};
   sensor::Sensor *error_code_sensor_{nullptr};
   sensor::Sensor *warning_code_sensor_{nullptr};
@@ -298,7 +297,7 @@ class VictronComponent : public uart::UARTDevice, public Component {
 
   bool publishing_{true};
   int state_{0};
-  u_int16_t checksum_{0};
+  uint8_t checksum_{0};
   std::string label_;
   std::string value_;
   std::unordered_map<std::string, std::string> values_;
